@@ -31,6 +31,8 @@ import (
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
+	vslmMethods "github.com/vmware/govmomi/vslm/methods"
+	vslmTypes "github.com/vmware/govmomi/vslm/types"
 )
 
 type VStorageObject struct {
@@ -51,6 +53,15 @@ func (m *VcenterVStorageObjectManager) init(*Registry) {
 func (m *VcenterVStorageObjectManager) object(ds types.ManagedObjectReference, id types.ID) *VStorageObject {
 	if objects, ok := m.objects[ds]; ok {
 		return objects[id]
+	}
+	return nil
+}
+
+func (m *VcenterVStorageObjectManager) globalObject(id types.ID) *VStorageObject {
+	for ds := range m.objects {
+		if obj := m.objects[ds][id]; obj != nil {
+			return obj
+		}
 	}
 	return nil
 }
@@ -463,6 +474,21 @@ func (m *VcenterVStorageObjectManager) ListTagsAttachedToVStorageObject(ctx *Con
 		}
 	} else {
 		body.Fault_ = Fault("", err)
+	}
+
+	return body
+}
+
+func (m *VcenterVStorageObjectManager) VslmRetrieveVStorageObject(ctx *Context, req *vslmTypes.VslmRetrieveVStorageObject) soap.HasFault {
+	body := new(vslmMethods.VslmRetrieveVStorageObjectBody)
+	obj := m.globalObject(req.Id)
+	if obj == nil {
+		body.Fault_ = Fault("", new(types.NotFound))
+		return body
+	}
+
+	body.Res = &vslmTypes.VslmRetrieveVStorageObjectResponse{
+		Returnval: obj.VStorageObject,
 	}
 
 	return body

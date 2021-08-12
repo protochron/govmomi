@@ -48,6 +48,8 @@ import (
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
 	"github.com/vmware/govmomi/vim25/xml"
+	"github.com/vmware/govmomi/vslm"
+	vslmSim "github.com/vmware/govmomi/vslm/simulator"
 )
 
 var (
@@ -665,6 +667,21 @@ func (s *Service) NewServer() *Server {
 	mux.HandleFunc(guestPrefix, ServeGuest)
 	mux.HandleFunc(nfcPrefix, ServeNFC)
 	mux.HandleFunc("/about", s.About)
+
+	// Handle /vslm/sdk
+	vslmMap := &Registry{
+		objects:   Map.objects,
+		locks:     Map.locks,
+		handlers:  Map.handlers,
+		Namespace: vslm.Namespace,
+		Path:      vslm.Path,
+	}
+	s.sdk[vslm.Path] = vslmMap
+	mux.HandleFunc(vslm.Path, s.ServeSDK)
+	Map.Put(&vslmSim.ServiceInstance{
+		ManagedObjectReference: vslm.ServiceInstance,
+		Content:                vslmSim.ServiceContent(),
+	})
 
 	if s.Listen == nil {
 		s.Listen = new(url.URL)
