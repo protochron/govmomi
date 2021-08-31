@@ -57,9 +57,13 @@ func (m *VcenterVStorageObjectManager) object(ds types.ManagedObjectReference, i
 	return nil
 }
 
-func (m *VcenterVStorageObjectManager) globalObject(id types.ID) *VStorageObject {
+func (m *VcenterVStorageObjectManager) globalObject(ctx *Context, id types.ID) *VStorageObject {
 	for ds := range m.objects {
 		if obj := m.objects[ds][id]; obj != nil {
+			stat := m.statDatastoreBacking(ctx, ds, &id)
+			if err := stat[id]; err != nil {
+				return nil
+			}
 			return obj
 		}
 	}
@@ -481,7 +485,7 @@ func (m *VcenterVStorageObjectManager) ListTagsAttachedToVStorageObject(ctx *Con
 
 func (m *VcenterVStorageObjectManager) VslmRetrieveVStorageObject(ctx *Context, req *vslmTypes.VslmRetrieveVStorageObject) soap.HasFault {
 	body := new(vslmMethods.VslmRetrieveVStorageObjectBody)
-	obj := m.globalObject(req.Id)
+	obj := m.globalObject(ctx, req.Id)
 	if obj == nil {
 		body.Fault_ = Fault("", new(types.NotFound))
 		return body
@@ -489,6 +493,39 @@ func (m *VcenterVStorageObjectManager) VslmRetrieveVStorageObject(ctx *Context, 
 
 	body.Res = &vslmTypes.VslmRetrieveVStorageObjectResponse{
 		Returnval: obj.VStorageObject,
+	}
+
+	return body
+}
+
+func (m *VcenterVStorageObjectManager) VslmRelocateVStorageObjectTask(ctx *Context, req *vslmTypes.VslmRelocateVStorageObject_Task) soap.HasFault {
+	body := new(vslmMethods.VslmRelocateVStorageObject_TaskBody)
+	obj := m.globalObject(ctx, req.Id)
+	if obj == nil {
+		body.Fault_ = Fault("", new(types.NotFound))
+		return body
+	}
+	spec := req.Spec.GetVslmMigrateSpec()
+
+	backing := spec.BackingSpec.GetVslmCreateSpecBackingSpec()
+	ds := backing.Datastore
+	if m.objects[ds] == nil {
+		body.Fault_ = Fault("", new(types.InvalidDatastore))
+		return body
+	}
+
+	backing := obj.Config.Backing.(*types.BaseConfigInfoDiskFileBackingInfo)
+	ds := Map.Get(req.Datastore).(*Datastore)
+	dc := Map.getEntityDatacenter(ds)
+	dm := Map.VirtualDiskManager()
+	dm.MoveVirtualDiskTask(ctx, &types.MoveVirtualDisk_Task{
+		SourceName:       backing.FilePath,
+		SourceDatacenter: &dc.Self,
+	})
+
+	obj.VStorageObject.Config.Backing.GetBaseConfigInfoBackingInfo().Datastore
+	found := m.objects[ds][req.Id] != nil
+	if !found {
 	}
 
 	return body
